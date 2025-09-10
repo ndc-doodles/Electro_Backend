@@ -44,7 +44,7 @@ class Customer(models.Model):
             self.search_history = []
         if term not in self.search_history:  # Check for duplicates
             self.search_history.append(term)
-            if len(self.search_history) > 2:  # Limit to 5 terms
+            if len(self.search_history) > 5:  # Limit to 5 terms
                 self.search_history.pop(0)  # Remove the oldest term
         self.save()
 
@@ -95,15 +95,18 @@ class Product_Category(models.Model):
     
 class Product_list(models.Model):
     product_name = models.CharField(max_length=50)
-    product_images = models.JSONField(default=list) # Stores array of strings (URLs or image paths)
+    product_images = models.JSONField(default=list)
     product_description = models.TextField()
     product_discount = models.CharField(max_length=20,blank=True)
     product_offer = models.CharField(max_length=20,blank=True)
-    product_category = models.CharField(max_length=50)
-    prize_range = models.JSONField(default=list)
+    category = models.ForeignKey(
+        Product_Category,
+        on_delete=models.CASCADE,   
+        related_name="category" 
+    )
+    price_range = models.IntegerField()
     product_stock = models.CharField(max_length=250)
     created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
-
     @property
     def is_authenticated(self):
         return True

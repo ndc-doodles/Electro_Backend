@@ -29,6 +29,7 @@ from rest_framework_simplejwt.tokens import RefreshToken, AccessToken
 from rest_framework_simplejwt.exceptions import TokenError
 import logging
 
+
 SECRET_KEY = "django-insecure-+k#qrwj!@v*ls7(*xs%8!0wfip@6g^e!v!rn&d5y5d7tuj4vm(" 
 
 class Register_admin(APIView):
@@ -52,7 +53,9 @@ class Register_admin(APIView):
 
 
 class Register_custumer(APIView):
-    permission_classes = [IsAuthenticated]
+    # permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
+
 
     def get(self, request):
         customers = Customer.objects.all()
@@ -71,7 +74,7 @@ class Register_custumer(APIView):
     def post(self, request):
         username = request.data.get("username")
         password = request.data.get("password")
-        discount = request.data.get("discount_individual")
+        # print(username,password)
 
         if not username or not password:
             return Response({"error": "Username and password are required"}, status=status.HTTP_400_BAD_REQUEST)
@@ -80,7 +83,7 @@ class Register_custumer(APIView):
             return Response({"error": "Username already taken"}, status=status.HTTP_400_BAD_REQUEST)
 
         # Create new customer with hashed password
-        customer = Customer(username=username, password=make_password(password),discount_individual=discount)
+        customer = Customer(username=username, password=make_password(password))
         customer.save()
 
         return Response({"message": "User registered successfully"}, status=status.HTTP_201_CREATED)
@@ -91,7 +94,7 @@ class UpdateRegister(APIView):
     def patch(self, request, id):
         username = request.data.get("username")
         password = request.data.get("password")
-        discount = request.data.get("discount_individual")
+        # discount = request.data.get("discount_individual")
 
         try:
             customer = Customer.objects.get(id=id)
@@ -102,8 +105,8 @@ class UpdateRegister(APIView):
             customer.username = username
         if password:
             customer.set_password(password)  # Securely update the password
-        if discount is not None:
-            customer.discount_individual = discount
+        # if discount is not None:
+        #     customer.discount_individual = discount
 
         customer.save()
         return Response({'message': 'The customer has been updated successfully'}, status=200)
@@ -229,7 +232,7 @@ class RefreshTokenView(APIView):
 
 
 class ProductCategoryView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def get(self, request,id=None):
         categories = Product_Category.objects.all()
@@ -255,7 +258,7 @@ class ProductCategoryView(APIView):
 
     
 class Product_categoryUpdate(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
     def patch(self, request, id):
         image = request.FILES.get("image")
 
@@ -278,17 +281,16 @@ class Product_categoryUpdate(APIView):
         if image:
             try:
                 cloudinary_response = cloudinary.uploader.upload(image)
-                cloudinary_url = cloudinary_response["public_id"]
+                cloudinary_url = cloudinary_response["secure_url"]  # Use full URL here
+                print('Uploaded image URL:', cloudinary_url)
+                category.image = cloudinary_url
+                category.save()
             except Exception as e:
                 return Response({"error": f"Cloudinary upload failed: {str(e)}"}, status=500)
 
         # Prepare serializer data
-        updated_data = request.data.copy()
-        if cloudinary_url:
-            updated_data["image"] = cloudinary_url  # Update image field in data
-
+        updated_data = request.data.dict()
         serializer = ProductCategorySerializer(category, data=updated_data, partial=True)
-
         if serializer.is_valid():
             serializer.save()
             return Response({"message": "Product category updated successfully", "data": serializer.data}, status=200)
@@ -319,17 +321,20 @@ class Product_categoryUpdate(APIView):
 
 
 class ProductListPost(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def get(self, request):
         products = Product_list.objects.all()
-        serializer = ProductListSerializer(products, many=True)
-        return Response(serializer.data)
+        if products:
+            serializer = ProductListSerializer(products, many=True)
+            return Response(serializer.data)
+        else:
+            return Response({"error": "No Products Found. Please add products."},status=404)
 
-    
 
     def post(self, request):
-        product_data = request.data  
+        product_data = request.data
+        print(product_data)
 
         # Ensure request data is not empty
         if not product_data:
@@ -339,11 +344,11 @@ class ProductListPost(APIView):
             return Response({"error": "Invalid format. Expected a dictionary."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Extract and validate product details
-        prize_list = product_data.get('prize_range')
+        # prize_list = product_data.get('prize_range')
         image_list = request.FILES.getlist("product_images")
 
         # Check if required fields are present
-        required_fields = ["product_name", "product_category", "product_stock"]
+        required_fields = ["product_name", "category_id", "product_stock","price_range"]
         for field in required_fields:
             if field not in product_data or not product_data[field]:
                 return Response({"error": f"'{field}' is required."}, status=status.HTTP_400_BAD_REQUEST)
@@ -361,34 +366,15 @@ class ProductListPost(APIView):
         except Exception as e:
             return Response({"error": f"Image upload failed: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        # Validate prize_range (should be a list of up to 3 dictionaries)
-        if prize_list:
-            if isinstance(prize_list, str):  # In case prize_range is a stringified JSON
-                try:
-                    prize_list = json.loads(prize_list)  # Deserialize stringified JSON
-                except json.JSONDecodeError:
-                    return Response({"error": "Invalid format for prize_range. It should be a valid JSON array."}, status=status.HTTP_400_BAD_REQUEST)
+        # Get category_id safely
+        category_id = product_data.get("category_id")
+        if isinstance(category_id, list):  
+            category_id = category_id[0]
 
-            if not isinstance(prize_list, list):
-                return Response({"error": "prize_range must be a list of dictionaries."}, status=status.HTTP_400_BAD_REQUEST)
-
-            # if len(prize_list) > 3:
-            #     return Response({"error": "Only up to 3 prize ranges are allowed."}, status=status.HTTP_400_BAD_REQUEST)
-
-            for prize in prize_list:
-                if not isinstance(prize, dict):
-                    return Response({"error": "Each entry in prize_range must be a dictionary."}, status=status.HTTP_400_BAD_REQUEST)
-                # new_entry = {
-                #         "from": prize.get("from", ""),  # Default empty if not provided
-                #         "to": prize.get("to", ""),
-                #         "prize": prize.get("prize", ""),
-                #         "id": prize.get(id, "")
-
-                #     }
-                # prize_list.append(new_entry)
-
-        else:
-            prize_list = []  # If prize_range is not provided, set it to an empty list
+        try:
+            category_instance = Product_Category.objects.get(pk=int(category_id))
+        except (Product_Category.DoesNotExist, ValueError, TypeError):
+            return Response({"error": "Invalid category_id"}, status=status.HTTP_400_BAD_REQUEST)
 
         # Create Product Instance
         try:
@@ -398,8 +384,8 @@ class ProductListPost(APIView):
                 product_description=product_data.get("product_description", ""),
                 product_discount=product_data.get("product_discount", "0%"),
                 product_offer=product_data.get("product_offer", ""),
-                product_category=product_data["product_category"],
-                prize_range=prize_list,
+                category_id=int(category_id),
+                price_range=product_data.get("price_range"),
                 product_stock=product_data["product_stock"]
             )
 
@@ -414,14 +400,14 @@ class ProductListPost(APIView):
 
 
 class ProduclistView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def get(self, request):
             response_data = []
             products = Product_list.objects.all()
 
             for product in products:
-                product_prize = product.prize_range
+                product_prize = product.price_range
                 print("product_prize is", product_prize)
 
                 try:
@@ -430,29 +416,20 @@ class ProduclistView(APIView):
                 except (ValueError, TypeError):
                     discount = 0  # Default discount is 0 if not valid
 
-                discounted_prices = []
-                for prize in product_prize:
-                    if 'price' in prize:
-                        try:
-                            actual_prize = int(prize['price'])
-                            print("actual_prize is", actual_prize)
+                try:
+                    actual_prize = int(product.price_range)
+                    print("actual_prize is", actual_prize)
 
-                            final_discount = actual_prize - (actual_prize * discount / 100)
-                            print("Final Price after Discount:", final_discount)
-
-                            discounted_prices.append({
-                                "actual_price": actual_prize,
-                                "final_discount": final_discount
-                            })
-                            print("The output array is", discounted_prices)
-                            
-                        except (ValueError, TypeError):
-                            continue  # Skip invalid prices
+                    final_discount = actual_prize - (actual_prize * discount / 100)
+                    print("Final Price after Discount:", final_discount)
+                    
+                except (ValueError, TypeError):
+                    continue  # Skip invalid prices
 
                 # Serialize the product data
                 serializer = ProductListSerializer(product)
                 product_data = serializer.data
-                product_data['discounted_prices'] = discounted_prices  # Add discount data
+                product_data['discounted_prices'] = final_discount  
                 response_data.append(product_data)
 
             # Ensure a valid Response is always returned
@@ -460,15 +437,18 @@ class ProduclistView(APIView):
     
 
 class ProduclistViewlimit(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def get(self, request):
             response_data = []
             products = Product_list.objects.all()[:6]
 
             for product in products:
-                product_prize = product.prize_range
-                print("product_prize is", product_prize)
+                try:
+                    product_prize = product.price_range
+                    print("product_prize is", product_prize)
+                except Exception:
+                    return Response({'error':'no price found'})
 
                 try:
                     discount = int(product.product_discount)
@@ -476,29 +456,13 @@ class ProduclistViewlimit(APIView):
                 except (ValueError, TypeError):
                     discount = 0  # Default discount is 0 if not valid
 
-                discounted_prices = []
-                for prize in product_prize:
-                    if 'price' in prize:
-                        try:
-                            actual_prize = int(prize['price'])
-                            print("actual_prize is", actual_prize)
-
-                            final_discount = actual_prize - (actual_prize * discount / 100)
-                            print("Final Price after Discount:", final_discount)
-
-                            discounted_prices.append({
-                                "actual_price": actual_prize,
-                                "final_discount": final_discount
-                            })
-                            print("The output array is", discounted_prices)
-                            
-                        except (ValueError, TypeError):
-                            continue  # Skip invalid prices
+                final_discount = product_prize - (product_prize * discount / 100)
+                print("Final Price after Discount:", final_discount)
 
                 # Serialize the product data
                 serializer = ProductListSerializer(product)
                 product_data = serializer.data
-                product_data['discounted_prices'] = discounted_prices  # Add discount data
+                product_data['discounted_prices'] = final_discount  # Add discount data
                 response_data.append(product_data)
 
             # Ensure a valid Response is always returned
@@ -508,7 +472,7 @@ class ProduclistViewlimit(APIView):
 
 
 class Product_updateanddelete(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def get(self,request,id):
         try:
@@ -525,56 +489,6 @@ class Product_updateanddelete(APIView):
         new_images = request.FILES.getlist("new_product_images")  # Use getlist to get multiple files
         existing_images_update = request.data.get('existing_images_update', [])
         print("the new_images is",new_images)
-
-
-        # Extract fields from request
-        # item_no = request.data.get("item_number")
-        # new_image = request.FILES.get("new_image")
-        new_range = request.data.get("prize_range", [])  # Default to empty list
-
-        # Ensure new_range is properly formatted (list or JSON string)
-        if isinstance(new_range, str):
-            try:
-                new_range = json.loads(new_range)  # Convert JSON string to list
-            except json.JSONDecodeError:
-                return Response(
-                    {"error": "Invalid JSON format for prize_range."}, 
-                    status=400
-                )
-
-        if not isinstance(new_range, list):
-            return Response({"error": "prize_range must be a list."}, status=400)
-
-        # Ensure existing prize_range is a list
-        existing_prize_range = item.prize_range if isinstance(item.prize_range, list) else []
-
-        # Convert existing prize range into a dictionary (id -> entry) for fast lookups
-        existing_prize_dict = {str(entry.get("id")): entry for entry in existing_prize_range if "id" in entry}
-
-        # Validate and process new_range updates
-        for entry in new_range:
-            entry_id = str(entry.get("id")) if entry.get("id") is not None else None
-
-            if entry_id and entry_id in existing_prize_dict:
-                # Update existing entry
-                existing_entry = existing_prize_dict[entry_id]
-                existing_entry["from"] = entry.get("from", existing_entry.get("from", ""))
-                existing_entry["to"] = entry.get("to", existing_entry.get("to", ""))
-                existing_entry["rate"] = entry.get("rate", existing_entry.get("rate", ""))
-            else:
-                
-                # Add new entry to the list
-                new_entry = {
-                    "id": entry.get("id", ""),
-                    "from": entry.get("from", ""),
-                    "to": entry.get("to", ""),
-                    "rate": entry.get("rate", ""),
-                }
-                existing_prize_range.append(new_entry)
-
-        # Save updated prize_range
-        item.prize_range = existing_prize_range
-        # item.save()
 
         # Update image if provided
         if not isinstance(item.product_images, list):
@@ -640,9 +554,6 @@ class Product_updateanddelete(APIView):
 
         # Dynamically update other fields in the request
         mutable_data = request.data.dict()
-        mutable_data.pop("prize_range", None)
-
-
         serializer = ProductListSerializer(item, data=mutable_data, partial=True)
 
         if serializer.is_valid():
@@ -698,10 +609,10 @@ class Product_updateanddelete(APIView):
                
 
 class ProductAddExtraImage(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def patch(self, request, id):
-        new_images = request.FILES.get("new_product_images")  # Get multiple uploaded files
+        new_images = request.FILES.getlist("new_product_images")  # ✅ use getlist()
         print("Received images:", new_images)
 
         product = Product_list.objects.filter(id=id).first()
@@ -711,8 +622,9 @@ class ProductAddExtraImage(APIView):
         if not new_images:
             return Response({'message': 'At least one new image is required'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Ensure product_images is a list
         if not isinstance(product.product_images, list):
-            product.product_images = []  # Ensure it's a list
+            product.product_images = []
 
         uploaded_images = []
         for image in new_images:
@@ -723,18 +635,18 @@ class ProductAddExtraImage(APIView):
                 if not cloudinary_url:
                     return Response({"error": "Failed to upload image to Cloudinary"}, status=500)
 
-                uploaded_images.append(cloudinary_url)  # Store new Cloudinary URLs
+                uploaded_images.append(cloudinary_url)
 
             except Exception as e:
                 return Response({"error": f"Cloudinary upload failed: {str(e)}"}, status=500)
 
-        # Combine existing images with new images
+        # Combine existing + new images
         updated_images = product.product_images + uploaded_images
 
-        # Keep only the first 5 images (remove extras)
+        # Restrict to max 5 images
         if len(updated_images) > 5:
-            removed_images = updated_images[5:]  # Get images that are removed
-            updated_images = updated_images[:5]  # Keep only first 5
+            removed_images = updated_images[5:]
+            updated_images = updated_images[:5]
 
             product.product_images = updated_images
             product.save()
@@ -745,7 +657,6 @@ class ProductAddExtraImage(APIView):
                 'removed_images': removed_images
             }, status=status.HTTP_200_OK)
 
-        # Save updated images if under the limit
         product.product_images = updated_images
         product.save()
 
@@ -753,58 +664,12 @@ class ProductAddExtraImage(APIView):
             'message': 'Images added successfully',
             'final_images': updated_images
         }, status=status.HTTP_200_OK)
-        
-
-    # def delete(self,request,id):
-    #     index= request.data.get("index")
-    #     if index:
-    #         index = int(index)
-    #         print("the index is:",index)
-    #     try:
-    #         product = Product_list.objects.get(id=id)
-    #         print("the product is:",product)
-    #         if product:
-    #             image_list = product.product_images
-    #             print("the image_list is:",image_list)
-    #             if isinstance(image_list, list) and 0 <= index < len(image_list):
-    #                 deleted_image  = image_list.pop(index)  # Get image at the specified index
-    #                 product.product_images = image_list  # Update the field
-    #                 product.save()  # Save changes to the database
-    #                 print("Deleted Image URL:", deleted_image)
-    #                 serializer = ProductListSerializer(product)
-    #                 return Response(serializer.data)
-    #             else:
-    #                 return Response({"error": "no image_list found"}, status=500)
-    #     except Exception as e:
-    #         return Response({"error": "no product found"}, status=500)
-
-    # def post(self, request, id):
-    #     existing_images_update = request.data.get('existing_images_update', [])
-
-    #     if not isinstance(existing_images_update, list):
-    #         return Response({'error': 'The existing_images_update must be a list'}, status=400)
-
-    #     # Fetch the product
-    #     product = get_object_or_404(Product_list, id=id)
-
-    #     # Ensure product_images is a list
-    #     if not isinstance(product.product_images, list):
-    #         return Response({'error': 'product_images field is not a list'}, status=400)
-
-    #     # Update the images
-    #     product.product_images = existing_images_update
-
-    #     # Save the product
-    #     product.save()
-
-    #     return Response({'message': 'Product images updated successfully'}, status=200)
-
 
 
 # storing the search history
 
 class Search_history(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def post(self, request):
         # Check if the user is logged in
@@ -883,7 +748,7 @@ class Search_history(APIView):
 
 # view for new arrivals
 class Newly_arrived(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def get(self, request):
         # Fetch the 5 most recently added products
@@ -923,9 +788,16 @@ class Profile_update_custumer(APIView):
             customer = Customer.objects.get(id=id)
         except Customer.DoesNotExist:
             return Response({"error": "Customer not found"}, status=status.HTTP_404_NOT_FOUND)
-
-        # Get the request data
-        request_data = request.data.copy()
+      
+       
+        if hasattr(request.data, "dict"):  # form-data
+            request_data = {
+                k: v[0] if len(v) == 1 else v
+                for k, v in request.data.lists()
+            }
+        else:  # JSON
+            request_data = request.data
+  # QueryDict (form-data)
 
         # Handle Address Update Separately (if provided)
         new_address = request_data.pop('address', None)
@@ -965,11 +837,13 @@ class Profile_update_custumer(APIView):
             except Exception as e:
                 return Response({'error': f'Upload failed: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
+            if 'image' in request_data:
+                del request_data['image']
+            
         # Proceed with updating other fields if needed
         serializer = Register_custumerSerializer(customer, data=request_data, partial=True)
         if serializer.is_valid():
             serializer.save()
-            
             return Response(serializer.data, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -1005,13 +879,17 @@ class Profile_update_custumer(APIView):
 
 # category filtering homescreen
 class Category_filter(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def post(self, request):
-            category = request.data.get('category_name')
+            category = request.data.get('category_id')
             print('Category received:', category)
-
-            check = Product_list.objects.filter(product_category=category)
+            try:
+                cat = Product_Category.objects.get(pk=int(category))
+                print(cat)
+                check = Product_list.objects.filter(category=cat)
+            except Product_Category.DoesNotExist:
+                return Response('no product found for this category',status=404)
 
             if check.exists():  # Check if queryset is not empty
                 print('Matching categories:', check)
@@ -1021,9 +899,9 @@ class Category_filter(APIView):
                 return Response({"error": "Category not found"}, status=status.HTTP_404_NOT_FOUND)
 
 class Adding_cart(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
-    def post(self, request):
+    def post(self, request): 
         user_id = request.data.get('user_id')
         products = request.data.get('products')
 
@@ -1051,11 +929,11 @@ class Adding_cart(APIView):
                 print("the cart items is",cart)
                 print("Type of cart.products:",cart.products)
             # Update the existing cart
-            existing_products = {item["id"]: item for item in cart.products}  # Create a dictionary for quick lookup
+            existing_products = {item["product_id"]: item for item in cart.products}  # Create a dictionary for quick lookup
             print('the existing_products',existing_products)
 
             for new_product in products:
-                product_id = new_product.get("id")
+                product_id = new_product.get("product_id")
                 new_count = int(new_product.get("count", 1))  # Ensure new count is an integer
 
                 if product_id in existing_products:
@@ -1082,6 +960,7 @@ class Adding_cart(APIView):
 
     def get(self, request):
         user = request.query_params.get('userid')
+        user = int(user)
         print('Current author is:', user)
         try:
             user_cart_items = Cart_items.objects.filter(user_id=user).first()
@@ -1092,57 +971,41 @@ class Adding_cart(APIView):
 
         cart_data = []
 
-        # for item in user_cart_items:
-        #     print("Processing Cart Item:", item)
-            # print("Item Products Data:", item.products)
-
         for product in user_cart_items.products:  
             print('the product iterator is',product)
-            p_id = product["id"]
+            p_id = int(product["product_id"])
             print('the p_id is',p_id)
 
-            product_count = int(product.get('count', 0))  
+            product_count = int(product.get('count', 0))
             print("Extracted Product ID:", p_id, "Product Count:", product_count)
 
             if not p_id:
                 continue  
 
             # Fetch product details
-            product_obj = Product_list.objects.filter(id=p_id).first()
-            print("Fetched Product Object:", product_obj)
+            try:
+                product_obj = Product_list.objects.filter(id=p_id).first()
+                print("Fetched Product Object:", product_obj)
+            except Product_list.DoesNotExist:
+                return Response({"error": "No matching products found"}, status=404)
 
             if product_obj is None:
                 continue
 
             # Get customer details and individual discount
-            invidual = Customer.objects.filter(id=user).first()
-            # discount_individual = int(invidual.discount_individual)
-            individual_discount = float(invidual.discount_individual.strip().replace("%", "")) / 100 if invidual and invidual.discount_individual else 0
-
-            print("Individual Discount:", individual_discount)
-
-            # Get product discount
-            # product_discount = int(product_obj.product_discount)                
+            invidual = Customer.objects.filter(id=user).first()                
             product_discount = float(product_obj.product_discount.strip().replace("%", "")) / 100 if product_obj and product_obj.product_discount else 0
             print("Product Discount:", product_discount)
 
             # Calculate total amount
             total_amount = 0
-            if product_obj and product_obj.prize_range:
-                for prize in product_obj.prize_range:
-                    start = int(prize.get('from', 0) or 0)
-                    end = int(prize.get('to', 0) or 0)
-                    price = float(prize.get('rate', 0) or 0)
-
-                    print(f"Checking range: from {start} to {end}, prize: {price}")
-
-                    if start <= product_count <= end:
-                        discount_to_apply = product_discount if product_discount else 0
-                        discounted_price = price * (1 - discount_to_apply)
-                        total_amount = product_count * discounted_price
-                        print("Total Amount for Product:", total_amount)
-                        break  
-
+            if product_obj and product_obj.price_range:
+                price = product_obj.price_range
+                print('price is',price)
+                discounted_price = price * (1 - product_discount)
+                total_amount = product_count * discounted_price
+                print("Total Amount for Product:", total_amount)
+                  
             # Append product details to cart_data
             if product_obj:
                 cart_data.append({
@@ -1154,36 +1017,23 @@ class Adding_cart(APIView):
                     "product_images": product_obj.product_images if product_obj.product_images else None,
                     "product_description": product_obj.product_description,
                     "product_discount": product_obj.product_discount,
-                    "individual_discount": individual_discount,
                     "product_offer": product_obj.product_offer,
                     "product_category": product_obj.product_category,
-                    "prize_range": product_obj.prize_range,
+                    "prize_range": product_obj.price_range,
                     "product_stock": product_obj.product_stock,
                     "total_amount": total_amount,
+                    "sum_total": None
                 })
 
-                sum_total = sum(item['total_amount'] for item in cart_data)
-                print("Total before discount:", sum_total)
-
-                discount_to_user = individual_discount if individual_discount else 0
-                discount_amount = sum_total * discount_to_user  # Calculate discount amount
-                final_price = sum_total - discount_amount  # Subtract discount from total
-
-                response_data = {
-                    "cart_data": cart_data,
-                    "sum_total": sum_total,  # Total before discount
-                    "discount_amount": discount_amount,  # Discount applied
-                    "final_price": final_price  # Total after discount
-                }
-
-                print("Discount applied:", discount_amount)
-                print("Final total after discount:", final_price)
-                
-
         if not cart_data:
-            return Response({"error": "No products found in cart"}, status=400)
+            return Response({"error": "No products found in cart"}, status=404)
 
-        return Response(response_data) 
+        # Add sum_total
+        sum_total = sum(item['total_amount'] for item in cart_data)
+        for item in cart_data:
+            item['sum_total'] = sum_total
+
+        return Response({"cart_data": cart_data})
 
 
 class Count_order_update(APIView):
@@ -1232,12 +1082,16 @@ class Count_order_update(APIView):
 
 
 class Delete_all_cart(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def post(self,request):
         user = request.data.get('username')
-        cart_items = Cart_items.objects.filter(user_id = user)
-        if cart_items is not None:
+        try:
+            cart_items = Cart_items.objects.filter(user_id = user)
+        except Cart_items.DoesNotExist:
+            return Response({"message": "Cart item not found"}, status=404)
+        
+        if cart_items:
             cart_items.delete()
             return Response({"message": "Cart items deleted succesfully"}, status=200)
         else:
@@ -1245,8 +1099,8 @@ class Delete_all_cart(APIView):
         
     def delete(self, request):
         # Extract request data
-        product_id = request.data.get("id")
-        user_id = request.data.get("user_id")
+        product_id = request.data.get("productid")
+        user_id = request.data.get("userid")
 
         if not product_id or not user_id:
             return Response({"error": "Product ID and User ID are required"}, status=status.HTTP_400_BAD_REQUEST)
@@ -1258,9 +1112,10 @@ class Delete_all_cart(APIView):
             return Response({"error": "Invalid product ID or user ID"}, status=status.HTTP_400_BAD_REQUEST)
 
         # Fetch the user's cart
-        cart = Cart_items.objects.filter(user_id=user_id).first()
+        try:
+            cart = Cart_items.objects.filter(user_id=user_id).first()
 
-        if not cart:
+        except Cart_items.DoesNotExist:
             return Response({"error": "Cart not found"}, status=status.HTTP_404_NOT_FOUND)
 
         # Check if the product exists in the cart
@@ -1268,7 +1123,7 @@ class Delete_all_cart(APIView):
         updated_products = []
 
         for product in cart.products:
-            if product["id"] == product_id:
+            if product["product_id"] == product_id:
                 product_found = True
             else:
                 updated_products.append(product)  # Keep other products
@@ -1279,122 +1134,26 @@ class Delete_all_cart(APIView):
         # Update the cart
         cart.products = updated_products
         cart.save(update_fields=["products"])
-
+        print('the cart.products:',cart.products)
+        if not cart.products:  # covers both None and []
+            cart.delete()
         return Response({"message": "Product removed successfully", "updated_cart": updated_products}, status=status.HTTP_200_OK)
         
 
 
 class order_products(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
-    # def post(self, request):
-    #     user_id = request.data.get('userid')
-    #     orders = request.data.get('orders')
-
-    #     print("Received user_id:", user_id)
-    #     print("Received products:", orders)
-
-    #     # Validate user_id and orders
-    #     if not user_id or not isinstance(orders, dict):
-    #         return Response({"error": "Invalid data format (user_id missing or orders is not a dict)"}, status=status.HTTP_400_BAD_REQUEST)
-
-    #     try:
-    #         # Create new order
-    #         order_products = Order_products.objects.create(user_id=user_id, product_items=orders)
-    #         serializer = OrderSerializer(order_products)
-
-    #         # Clear user's cart if it exists
-    #         cart = Cart_items.objects.filter(user_id=user_id).first()
-    #         if cart:
-    #             cart.delete()
-    #             print("Cart cleared for user:", user_id)
-    #             return Response({"message":"Order placed successfully and Cart cleared for user","order_details":serializer.data},status=200)
-    #         return Response({
-    #             "message": "Order placed successfully",
-    #             "order_details": serializer.data
-    #         }, status=status.HTTP_201_CREATED)
-
-    #     except Exception as e:
-    #         print(f"Error placing order: {e}")
-    #         return Response({"error": "Failed to place order"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
     def post(self, request):
-        user_id = request.data.get('userid')
-        orders = request.data.get('orders')
+        new_orders = request.data  
 
-        print("Received user_id:", user_id)
-        print("Received products:", orders)
+        serializer = OrderSerializer(data=new_orders)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"message": "The order placed successfully"}, status=201)
+        else:
+            return Response(serializer.errors, status=400)
 
-        # Validate user_id and orders
-        if not user_id or not isinstance(orders, dict):
-            return Response({"error": "Invalid data format (user_id missing or orders is not a dict)"}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            # Create new order
-            order_products = Order_products.objects.create(user_id=user_id, product_items=orders)
-            serializer = OrderSerializer(order_products)
-
-            user = Customer.objects.filter(id=user_id).first()
-            username = user.username if user else f"User ID: {user_id}"
-
-            message_body = f"New Order placed by user: {username}\nOrder Details:\n"
-
-            order_data = orders  # your full orders dict
-
-            # Format address nicely
-            address = order_data.get('address', {})
-            message_body += "Address:\n"
-            message_body += f"  House Name: {address.get('housename', '')}\n"
-            message_body += f"  Road Name: {address.get('roadname', '')}\n"
-            message_body += f"  Landmark: {address.get('landmark', '')}\n"
-            message_body += f"  District: {address.get('district', '')}\n"
-            message_body += f"  City: {address.get('city', '')}\n"
-            message_body += f"  State: {address.get('state', '')}\n"
-            message_body += f"  Postcode: {address.get('postcode', '')}\n\n"
-
-            # Other main order info
-            message_body += f"Order ID: {order_data.get('order_id', '')}\n"
-            message_body += f"Date: {order_data.get('date', '')}\n"
-            message_body += f"Final Amount: {order_data.get('final_amount', '')}\n\n"
-
-            # Products details (list of dicts)
-            products = order_data.get('products', [])
-            message_body += "Products:\n"
-            for i, product in enumerate(products, 1):
-                product_obj = Product_list.objects.filter(id=product.get('product_id')).first()
-                product_name = product_obj.product_name if product_obj else f"Product ID: {product.get('product_id')}"
-                
-                message_body += f"  Product {i}:\n"
-                message_body += f"    Product Name: {product_name}\n"
-                message_body += f"    Count: {product.get('count', '')}\n"
-                message_body += f"    Total Amount: {product.get('total_amount', '')}\n\n"
-                        # Now send this message_body via Twilio
-            try:
-                client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
-                client.messages.create(
-                    from_='whatsapp:+14155238886',
-                    body=message_body,
-                    to='whatsapp:+918129106509'  # Admin WhatsApp number
-                )
-                print("WhatsApp message sent to admin.")
-            except Exception as e:
-                print(f"Error sending WhatsApp message: {e}")
-
-            # Clear user's cart if it exists
-            cart = Cart_items.objects.filter(user_id=user_id).first()
-            if cart:
-                cart.delete()
-                print("Cart cleared for user:", user_id)
-                return Response({"message":"Order placed successfully and Cart cleared for user","order_details":serializer.data},status=200)
-
-            return Response({
-                "message": "Order placed successfully",
-                "order_details": serializer.data
-            }, status=status.HTTP_201_CREATED)
-
-        except Exception as e:
-            print(f"Error placing order: {e}")
-            return Response({"error": "Failed to place order"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
     def get(self, request):
@@ -1450,16 +1209,17 @@ class order_products(APIView):
             order_list = {
                 "id":order.id,
                 "userid": user,
-                "address": order_data.get("address"),
-                "order_id": order_data.get("order_id"),
+                "name":customer.username,
+                "address": customer.address,
+                "order_id": order_data.get("orderid"),
                 "date": order_data.get("date"),
                 "final_amount": order_data.get("final_amount"),
                 "order_track":order_data.get("order_track")
             }
 
             product_data = []
-            for product in order_data.get("products", []):  # Ensure products key exists
-                product_id = product.get("product_id")
+            for product in order_data.get("product", []):  # Ensure products key exists
+                product_id = product.get("productid")
                 print("The product ID is:", product_id)
 
                 # Fetch product details
@@ -1473,7 +1233,7 @@ class order_products(APIView):
                         "product_id": product_id,
                         "product_name": product_list.product_name,
                         "product_images": product_list.product_images if product_list.product_images else None,
-                        "product_category": product_list.product_category,
+                        # "product_category": product_list.category,
                         "product_stock": product_list.product_stock,
                         "product_description": product_list.product_description,
                         "order_status": product.get("order_status"),
@@ -1494,17 +1254,13 @@ class order_products(APIView):
 
 
 class UpdateOrderStatus(APIView):
-    permission_classes = [IsAuthenticated]
-
+    permission_classes = [AllowAny]
+ 
     def patch(self, request):
-        order_reject = request.data.get("rejected_products", [])  # List of rejected product IDs
+        order_reject = request.data.get("rejected_products", [])  
         user_id = request.data.get("userId")
-        order_id = str(request.data.get("orderId", 0))  # Convert order_id to string
-        # ordertrack = request.data.get("order_track")
-
+        order_id = str(request.data.get("orderId", 0))
         print("The request data list:", order_reject, user_id, order_id)
-
-        # Fetch orders related to the user
         orders = Order_products.objects.filter(user_id=user_id)
         print("The order data:", orders)
 
@@ -1514,23 +1270,21 @@ class UpdateOrderStatus(APIView):
         rejected_product_ids = {int(pid) for pid in order_reject}
         print("Rejected product IDs:", rejected_product_ids)
 
-        updated = False  # Flag to check if any update happens
-        order_found = False  # Flag to check if at least one order_id matches
-        updated_orders = []  # Store updated order items
+        updated = False  
+        order_found = False  
+        updated_orders = []
 
         for order in orders:
             product_items_list = order.product_items  
             print("The product_items_list data:", product_items_list)
 
-            id_order = str(product_items_list.get("order_id"))
+            id_order = str(product_items_list.get("orderid"))
             print("Checking id_order:", id_order)
 
-            if id_order == order_id:  # Ensure order_id matches
+            if id_order == order_id: 
                 order_found = True
-                # product_items_list['order_track'] = ordertrack  # Update tracking status
-
                 for product in product_items_list.get("products", []):
-                    proid = int(product.get("product_id", 0))  # Ensure product_id is an integer
+                    proid = int(product.get("productid", 0)) 
                     print("Checking product ID:", proid)
 
                     if proid in rejected_product_ids:
@@ -1541,14 +1295,13 @@ class UpdateOrderStatus(APIView):
 
                     updated = True
 
-                    # Save changes if any updates were made
                 if updated:
                     product_items_list['order_track'] = (
                         "Accept" if any(p["order_status"] == "Accept" for p in product_items_list["products"]) else "Reject"
                         )
                     
                     order.product_items = product_items_list
-                    order.save(update_fields=["product_items"])  # Save only the modified field
+                    order.save(update_fields=["product_items"]) 
                     print(f"Order {order.id} updated successfully")
                     updated_orders.append(product_items_list)
 
@@ -1564,7 +1317,7 @@ class UpdateOrderStatus(APIView):
         return Response({"message": "No updates were made"}, status=status.HTTP_400_BAD_REQUEST)
 
 class Update_tracking(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def patch(self, request, id):
         order_loc = request.data.get('order_track')  # New tracking status
@@ -1599,7 +1352,7 @@ class Update_tracking(APIView):
 
 
 class CancelOrder(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def post(self, request):
         username = request.data.get("user_id")
@@ -1620,7 +1373,7 @@ class CancelOrder(APIView):
         order_to_delete = None
 
         for order in order_list:
-            if order.product_items.get("order_id") == order_id:  # Ensure order_id matches
+            if order.product_items.get("orderid") == order_id:  # Ensure order_id matches
 
                 # Check if all products have order_status = "null" or None
                 all_null_status = all(
@@ -1642,9 +1395,8 @@ class CancelOrder(APIView):
     def delete(self, request):
         userid = request.data.get("user_id")
         orderid = request.data.get("order_id")
-        productid = request.data.get("product_id")  # Expecting an integer
+        productid = request.data.get("product_id")  
 
-        # Validate required fields
         if not all([userid, orderid, productid]):
             return Response(
                 {"error": "All fields (user_id, order_id, product_id) are required"},
@@ -1662,6 +1414,7 @@ class CancelOrder(APIView):
 
         # Fetch orders for the user
         order_list = Order_products.objects.filter(user_id=userid)
+        print("the order products is:",order_list)
 
         if not order_list.exists():
             return Response(
@@ -1674,13 +1427,15 @@ class CancelOrder(APIView):
         product_found = False  # Track whether product_id exists in the order
 
         for order_item in order_list:
-            if order_item.product_items.get("order_id") == orderid:
-                original_products = order_item.product_items.get("products", [])
+            if order_item.product_items.get("orderid") == orderid:
+                original_products = order_item.product_items.get("product", [])
+                print('the original items is',original_products)
 
                 # Check if the product exists in the order
                 for product in original_products:
-                    if int(product["product_id"]) == productid:
+                    if int(product["productid"]) == productid:
                         product_found = True
+                        print(product_found,"hqhqhqhh")
                         # If order_status is not "null", return an error message
                         if product["order_status"] != "null":
                             return Response(
@@ -1698,13 +1453,13 @@ class CancelOrder(APIView):
                 updated_products = [
                     product
                     for product in original_products
-                    if not (int(product["product_id"]) == productid and product["order_status"] == "null")
+                    if not (int(product["productid"]) == productid and product["order_status"] == "null")
                 ]
 
                 if updated_products:  # If products remain, update the order
                     total_amount = sum(product.get("total_amount", 0) for product in updated_products)
 
-                    order_item.product_items["products"] = updated_products
+                    order_item.product_items["product"] = updated_products
                     order_item.product_items["final_amount"] = total_amount
 
                     order_item.save(update_fields=["product_items"])
@@ -1765,7 +1520,7 @@ class Stock_auto_update(APIView):
 
 class Total_counts_dashboard(APIView):
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
  
     def get(self,request):
         active_customer_count = Customer.objects.filter(status=False).count()
@@ -1784,7 +1539,7 @@ class Total_counts_dashboard(APIView):
 
 
 class Update_customer_status(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def patch(self, request, id):
         # Extract status from request data
@@ -1967,7 +1722,7 @@ class Update_customer_status(APIView):
 #         return Response(final_list, status=200)
 
 class TotalOrdersList(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def get(self, request):
         order_list = Order_products.objects.all()
@@ -1983,14 +1738,14 @@ class TotalOrdersList(APIView):
             product_items = order.product_items
             products = product_items.get("products", [])
             for data in products:
-                product_ids.add(data["product_id"])
+                product_ids.add(data["productid"])
 
         # Fetch product details in a dictionary for quick lookup
         product_dict = {
             str(product.id): {
                 "product_name": product.product_name,
                 "product_images": product.product_images if product.product_images else None,
-                "product_category": product.product_category,
+                "product_category": product.category,
                 "product_stock": product.product_stock,
             }
             for product in Product_list.objects.filter(id__in=product_ids)
@@ -2325,17 +2080,76 @@ class SearchOrders(APIView):
 
 
     
+class Enquiry_send(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = EnquirySerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=201)  # Use 201 for resource creation
+        else:
+            return Response({"message": "Validation failed", "errors": serializer.errors}, status=400)  # Use 400 for bad request
+
+        
+    def get(self, request):
+        try:
+            enquiry = Enquiry.objects.all()
+        except Error:
+            return Response({"error": "No enquiries found"}, status=status.HTTP_404_NOT_FOUND)
+        enquiry_list = []
+
+        for items in enquiry:
+            product_id = int(items.product_id)
+            print("The product ID is:", product_id)
+            try:
+                product = Product_list.objects.get(id=product_id)
+            except Product_list.DoesNotExist:
+                print(f"Product with ID {product_id} not found.")
+                continue  
+            user = int(items.user_id)
+            print(user)
+            try:
+                customer = Customer.objects.get(id=user)
+                print(customer)
+            except Customer.DoesNotExist:
+                print(f"Customer with ID {user} not found.")
+                continue
+
+            print("The product list:", product)
+
+            enquiry_list.append({
+                "user_id": user,
+                "username":customer.username,
+                "phone_number":customer.phone_number,
+                "product_name": product.product_name,
+                "product_image": product.product_images if product.product_images else None,  # Convert to URL string
+                "product_description": product.product_description,
+                # "product_category": product.category,
+                "prize_range": product.price_range,
+                "product_stock": product.product_stock,
+                "message": items.message
+            })
+
+        if enquiry_list:
+            return Response(enquiry_list, status=status.HTTP_200_OK)
+        else:
+            return Response({"error": "No enquiries found"}, status=status.HTTP_404_NOT_FOUND)
+
+
 # class Enquiry_send(APIView):
-#     permission_classes = [IsAuthenticated]
+#     permission_classes = [AllowAny]
 
 #     def post(self, request):
 #         serializer = EnquirySerializer(data=request.data)
 #         if serializer.is_valid():
 #             serializer.save()
-#             return Response(serializer.data, status=201)  # Use 201 for resource creation
-#         else:
-#             return Response({"message": "Validation failed", "errors": serializer.errors}, status=400)  # Use 400 for bad request
 
+#         else:
+#             return Response(
+#                 {"message": "Validation failed", "errors": serializer.errors}, 
+#                 status=400
+#             )
         
 #     def get(self, request):
 #         try:
@@ -2378,116 +2192,6 @@ class SearchOrders(APIView):
 #             return Response(enquiry_list, status=status.HTTP_200_OK)
 #         else:
 #             return Response({"error": "No enquiries found"}, status=status.HTTP_404_NOT_FOUND)
-
-from django.views.decorators.csrf import csrf_exempt
-from django.http import HttpResponse
-from twilio.twiml.messaging_response import MessagingResponse
-
-@csrf_exempt
-def whatsapp_webhook(request):
-    if request.method == 'POST':
-        incoming_msg = request.POST.get('Body', '').strip()
-        from_number = request.POST.get('From', '')
-        
-        # You can add logic to reply or process the incoming message
-        response = MessagingResponse()
-        
-        if incoming_msg.lower() == 'hi':
-            response.message("Hello! How can I help you?")
-        else:
-            response.message("Thanks for your message: " + incoming_msg)
-        
-        return HttpResponse(str(response), content_type='application/xml')
-    else:
-        return HttpResponse("Only POST allowed", status=405)
-
-
-from twilio.rest import Client
-from django.conf import settings
-
-class Enquiry_send(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request):
-        serializer = EnquirySerializer(data=request.data)
-        if serializer.is_valid():
-            enquiry = serializer.save()
-
-            # WhatsApp Message Logic
-            try:
-                client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
-
-                customer = Customer.objects.get(id=enquiry.user_id)
-                product = Product_list.objects.get(id=enquiry.product_id)
-
-                message_body = (
-                    f" New enquiry received!\n\n"
-                    f" Customer: {customer.username}\n"
-                    f" Phone: {customer.phone_number}\n"
-                    f" Product: {product.product_name}\n"
-                    f" Message: {enquiry.message}"
-                )
-
-                # Send to business owner or admin WhatsApp (must be joined to sandbox)
-                client.messages.create(
-                    from_='whatsapp:+14155238886',  # Twilio Sandbox Number
-                    body=message_body,
-                    to='whatsapp:+918129106509'  # Must be pre-joined to the sandbox
-                )
-
-            except Exception as e:
-                print(f" Error sending WhatsApp message: {str(e)}")
-
-            return Response(serializer.data, status=201)
-        else:
-            return Response(
-                {"message": "Validation failed", "errors": serializer.errors}, 
-                status=400
-            )
-        
-
-
-    def get(self, request):
-        try:
-            enquiry = Enquiry.objects.all()
-        except Error:
-            return Response({"error": "No enquiries found"}, status=status.HTTP_404_NOT_FOUND)
-        enquiry_list = []
-
-        for items in enquiry:
-            product_id = int(items.product_id)
-            print("The product ID is:", product_id)
-            try:
-                product = Product_list.objects.get(id=product_id)
-            except Product_list.DoesNotExist:
-                print(f"Product with ID {product_id} not found.")
-                continue  # Skip this enquiry if the product does not exist
-            user = int(items.user_id)
-            try:
-                customer = Customer.objects.get(id=user)
-            except Customer.DoesNotExist:
-                print(f"Customer with ID {user} not found.")
-                continue
-
-            print("The product list:", product)
-
-            enquiry_list.append({
-                "user_id": user,
-                "username":customer.username,
-                "phone_number":customer.phone_number,
-                "product_name": product.product_name,
-                "product_image": product.product_images if product.product_images else None,  # Convert to URL string
-                "product_description": product.product_description,
-                "product_category": product.product_category,
-                "prize_range": product.prize_range,
-                "product_stock": product.product_stock,
-                "message": items.message
-            })
-
-        if enquiry_list:
-            return Response(enquiry_list, status=status.HTTP_200_OK)
-        else:
-            return Response({"error": "No enquiries found"}, status=status.HTTP_404_NOT_FOUND)
 
 
 

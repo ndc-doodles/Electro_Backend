@@ -8,17 +8,38 @@ class ProductCategorySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Product_Category
-        fields = ['category_name', 'image']
+        fields = ['id', 'category_name', 'image']
 
     def get_image(self, obj):
         if obj.image:
             return cloudinary.CloudinaryImage(str(obj.image)).build_url()
-        return None  # Return None if no image is available
+        return None  
 
 class ProductListSerializer(serializers.ModelSerializer):
+    # accept category_id when creating/updating
+    category_id = serializers.PrimaryKeyRelatedField(
+        source='category',  # maps to the FK field
+        queryset=Product_Category.objects.all(),
+        write_only=True
+    )
+    # show category details when reading
+    category = ProductCategorySerializer(read_only=True)
+
     class Meta:
         model = Product_list
-        fields = '__all__'
+        fields = [
+            'id',
+            'product_name',
+            'product_images',
+            'product_description',
+            'product_discount',
+            'product_offer',
+            'price_range',
+            'product_stock',
+            'created_at',
+            'category',      # nested object for output
+            'category_id',   # only used for input
+        ]
 
 
 class Register_custumerSerializer(serializers.ModelSerializer):

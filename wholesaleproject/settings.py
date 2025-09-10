@@ -83,14 +83,21 @@ TEMPLATES = [
 WSGI_APPLICATION = 'wholesaleproject.wsgi.application'
 
 
+# DATABASES = {
+#     'default': {
+#         'ENGINE':'django.db.backends.postgresql',
+#         'NAME':os.getenv('DB_NAME'),
+#         'USER':os.getenv('DB_USER'),
+#         'PASSWORD':os.getenv('DB_PASSWORD'), 
+#         'HOST':os.getenv('DB_HOST'),
+#         'PORT':os.getenv('DB_PORT'),
+#     }
+# }
+
 DATABASES = {
     'default': {
-        'ENGINE':'django.db.backends.postgresql',
-        'NAME':os.getenv('DB_NAME'),
-        'USER':os.getenv('DB_USER'),
-        'PASSWORD':os.getenv('DB_PASSWORD'), 
-        'HOST':os.getenv('DB_HOST'),
-        'PORT':os.getenv('DB_PORT'),
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
 
@@ -152,18 +159,18 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ),
         'DEFAULT_AUTHENTICATION_CLASSES': (
-        'retailapp.authentication.CustomJWTAuthentication',  # Use custom authentication
+        'retailapp.authentication.CustomJWTAuthentication',  
     ),
 }
 
 
-SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),  # Short-lived access token
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),  # Long-lived refresh token
-    "ROTATE_REFRESH_TOKENS": True,  # Issue a new refresh token on each refresh request
-    "BLACKLIST_AFTER_ROTATION": True,  # Old refresh tokens cannot be used
-    "AUTH_HEADER_TYPES": ("Bearer",),
-}
+# SIMPLE_JWT = {
+#     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),  
+#     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),  
+#     "ROTATE_REFRESH_TOKENS": True,  
+#     "BLACKLIST_AFTER_ROTATION": True,  
+#     "AUTH_HEADER_TYPES": ("Bearer",),
+# }
 
 # AUTH_USER_MODEL = "retailapp.User"
 
@@ -234,11 +241,9 @@ MEDIA_URL = "https://res.cloudinary.com/djedeaw0l/"
 # settings.py
 from datetime import timedelta
 
-SESSION_COOKIE_AGE = 120  # 2 minutes
+SESSION_COOKIE_AGE = 1800  # 2 minutes
 SESSION_ENGINE = "django.contrib.sessions.backends.db"
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False
-
-
 
 TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID')
 TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN')
