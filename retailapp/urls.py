@@ -5,6 +5,7 @@ from .views import *
 urlpatterns = [
     path('', Home.as_view(),name='home'),
     path('api/product-category/', ProductCategoryView.as_view(), name='product-category'),
+    path('api/ProductSubCategoryView/', ProductSubCategoryView.as_view(), name='Product-SubCategory'),
     path('api/Product_categoryUpdate/<int:id>/', Product_categoryUpdate.as_view(), name='Product_categoryUpdate'),
     path('api/ProductListPost/', ProductListPost.as_view(), name='ProductListPost'),
     path('api/ProduclistView/', ProduclistView.as_view(), name='ProduclistView'),
@@ -25,7 +26,7 @@ urlpatterns = [
     path('api/Delete_all_cart/', Delete_all_cart.as_view(), name='Delete_all_cart'),
     path('api/order_products/', order_products.as_view(), name='order_products'),
     path('api/Update_order_status/', UpdateOrderStatus.as_view(), name='Update_order_status'),
-    path('api/Update_tracking/<int:id>/', Update_tracking.as_view(), name='Update_tracking'),
+    path('api/Update_tracking/<int:id>/', Update_tracking.as_view(), name='Update_tracking'), 
     path('api/Stock_auto_update/', Stock_auto_update.as_view(), name='Stock_auto_update'),
     path('api/Total_counts_dashboard/', Total_counts_dashboard.as_view(), name='Total_counts_dashboard'),
     path('api/Update_customer_status/<int:id>/', Update_customer_status.as_view(), name='Update_customer_status'),
@@ -38,8 +39,4 @@ urlpatterns = [
     path('api/Top_products/', Top_products.as_view(), name='Top_products'),
     path('api/slider_Adds/', slider_Adds.as_view(), name='slider_Adds'),
     path('api/slider_Adds/<int:id>/', slider_Adds.as_view(), name='slider_Adds-update'),
-
 ]
-
-
-

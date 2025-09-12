@@ -15,6 +15,20 @@ class ProductCategorySerializer(serializers.ModelSerializer):
             return cloudinary.CloudinaryImage(str(obj.image)).build_url()
         return None  
 
+
+class ProductSubCategorySerializer(serializers.ModelSerializer):
+    image = serializers.SerializerMethodField()  # Convert public_id to full URL
+
+    class Meta:
+        model = ProductSubCategory
+        fields = ['id', 'sub_category', 'image']
+
+    def get_image(self, obj):
+        if obj.image:
+            return cloudinary.CloudinaryImage(str(obj.image)).build_url()
+        return None  
+
+
 class ProductListSerializer(serializers.ModelSerializer):
     # accept category_id when creating/updating
     category_id = serializers.PrimaryKeyRelatedField(
@@ -24,6 +38,14 @@ class ProductListSerializer(serializers.ModelSerializer):
     )
     # show category details when reading
     category = ProductCategorySerializer(read_only=True)
+
+    subcategory_id = serializers.PrimaryKeyRelatedField(
+        source='subcategory',  # maps to the FK field
+        queryset=ProductSubCategory.objects.all(),
+        write_only=True
+    )
+    sub_category = ProductSubCategorySerializer(read_only=True)
+
 
     class Meta:
         model = Product_list
@@ -39,6 +61,8 @@ class ProductListSerializer(serializers.ModelSerializer):
             'created_at',
             'category',      # nested object for output
             'category_id',   # only used for input
+            'sub_category',
+            'subcategory_id'
         ]
 
 

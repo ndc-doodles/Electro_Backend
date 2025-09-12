@@ -148,7 +148,7 @@ class UserLoginView(APIView):
             "user_id": user.id,
             "username": user.username,
             "user_type": user_type,
-        }
+        } 
 
         if user_type == "customer":
             response_data["profile_image"] = user.profile_image.url if user.profile_image else None
@@ -256,6 +256,31 @@ class ProductCategoryView(APIView):
         else:
             return Response({'error': 'the fields are compulsory'}, status=404)
 
+
+class ProductSubCategoryView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request,id=None):
+        subcategories = ProductSubCategory.objects.all()
+        serializer = ProductSubCategorySerializer(subcategories, many=True)
+        for categories_data, subcategories in zip(serializer.data, subcategories):
+            categories_data["id"] = subcategories.id  # Attach the `id` field
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        name = request.data.get('name')
+        image = request.FILES.get('image')
+
+        if image and name:
+            try:
+                # Upload image to Cloudinary
+                upload_result = cloudinary.uploader.upload(image)
+                ProductSubCategory.objects.create(sub_category=name,image=upload_result['public_id'])
+                return Response({'message':'the product category created'}, status=201)
+            except Exception as e:
+                return Response({'error': f'Upload failed: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        else:
+            return Response({'error': 'the fields are compulsory'}, status=404)
     
 class Product_categoryUpdate(APIView):
     permission_classes = [AllowAny]
@@ -375,16 +400,26 @@ class ProductListPost(APIView):
             category_instance = Product_Category.objects.get(pk=int(category_id))
         except (Product_Category.DoesNotExist, ValueError, TypeError):
             return Response({"error": "Invalid category_id"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        subcategory_id = product_data.get("subcategory_id")
+        if isinstance(subcategory_id, list):  
+            subcategory_id = subcategory_id[0]
+
+        try:
+            subcategory_instance = ProductSubCategory.objects.get(pk=int(subcategory_id))
+        except (ProductSubCategory.DoesNotExist, ValueError, TypeError):
+            return Response({"error": "Invalid subcategory_id"}, status=status.HTTP_400_BAD_REQUEST)
 
         # Create Product Instance
         try:
             product = Product_list.objects.create(
                 product_name=product_data["product_name"],
-                product_images=image_urls,  # Store uploaded image URLs
+                product_images=image_urls, 
                 product_description=product_data.get("product_description", ""),
                 product_discount=product_data.get("product_discount", "0%"),
                 product_offer=product_data.get("product_offer", ""),
-                category_id=int(category_id),
+                category=category_instance, 
+                sub_category =subcategory_instance,
                 price_range=product_data.get("price_range"),
                 product_stock=product_data["product_stock"]
             )
@@ -716,7 +751,7 @@ class Search_history(APIView):
                         return Response({'error': 'Product_list DoesNotExist.'}, status=400)
 
                     if len(all_products) >= 1:
-                        products_list = random.sample(all_products, k=1)
+                        products_list = random.sample(all_products, k=2)
                         serializer = ProductListSerializer(products_list, many=True)
                         return Response(serializer.data, status=200)
                     else:
@@ -724,7 +759,8 @@ class Search_history(APIView):
 
 
                 # Fetch products that match search_data
-                matched_products = list(Product_list.objects.filter(product_category__in=search_data))
+                matched_products = list(Product_list.objects.filter(sub_category__in=search_data))
+                print(matched_products,'fsssssssss')
 
                 if not matched_products:
                     return Response({'message': 'No matching products found'}, status=status.HTTP_204_NO_CONTENT)
@@ -743,7 +779,15 @@ class Search_history(APIView):
             except Customer.DoesNotExist:
                 return Response({'message': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
         else:
-            return Response({'message': 'user_id is compulsory'}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                all_products = list(Product_list.objects.all())
+            except Product_list.DoesNotExist:
+                return Response({'error': 'Product_list DoesNotExist.'}, status=400)
+
+            if len(all_products) >= 1:
+                products_list = random.sample(all_products, k=1)
+                serializer = ProductListSerializer(products_list, many=True)
+                return Response(serializer.data, status=200)
 
 
 # view for new arrivals
@@ -1018,7 +1062,7 @@ class Adding_cart(APIView):
                     "product_description": product_obj.product_description,
                     "product_discount": product_obj.product_discount,
                     "product_offer": product_obj.product_offer,
-                    "product_category": product_obj.product_category,
+                    "product_category": product_obj.category,
                     "prize_range": product_obj.price_range,
                     "product_stock": product_obj.product_stock,
                     "total_amount": total_amount,
@@ -2197,7 +2241,7 @@ class Enquiry_send(APIView):
 
 class Top_products(APIView):
 
-    permission_classes = []
+    permission_classes = [AllowAny]
 
     def get(self, request):
         see_more = request.query_params.get("see_more", "false").lower() == "true"
@@ -2230,7 +2274,7 @@ class Top_products(APIView):
                         continue
 
                     if items.get('order_status') == 'accepted':
-                        product_id = items.get('product_id')
+                        product_id = items.get('productid')
                         print('The product id with status accepted:', product_id)
 
                         if product_id in seen_products:
@@ -2249,8 +2293,8 @@ class Top_products(APIView):
                             'product_images': product_obj.product_images if product_obj.product_images else None,
                             'product_description': product_obj.product_description,
                             'product_discount': product_obj.product_discount if product_obj.product_discount else None,
-                            'product_category': product_obj.product_category,
-                            'prize_range': product_obj.prize_range,
+                            # 'product_category': product_obj.category,
+                            'price_range': product_obj.price_range,
                             'product_stock': product_obj.product_stock,
                             'order_status': items.get('order_status')
                         })
@@ -2277,7 +2321,7 @@ class Top_products(APIView):
 
 
 class slider_Adds(APIView): 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
     
     def post(self, request):
         image = request.FILES.get('image')

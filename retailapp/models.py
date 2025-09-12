@@ -93,6 +93,17 @@ class Product_Category(models.Model):
     def __str__(self):
         return self.category_name
     
+class ProductSubCategory(models.Model):
+    sub_category = models.CharField(max_length=20)
+    image =  CloudinaryField('image',blank=True, null=True) 
+
+    @property
+    def is_authenticated(self):
+        return True
+    
+    def __str__(self):
+        return self.sub_category
+    
 class Product_list(models.Model):
     product_name = models.CharField(max_length=50)
     product_images = models.JSONField(default=list)
@@ -103,6 +114,11 @@ class Product_list(models.Model):
         Product_Category,
         on_delete=models.CASCADE,   
         related_name="category" 
+    )
+    sub_category = models.ForeignKey(
+        ProductSubCategory,
+        on_delete=models.CASCADE,   
+        related_name="subcategory" 
     )
     price_range = models.IntegerField()
     product_stock = models.CharField(max_length=250)
@@ -122,6 +138,9 @@ class Product_list(models.Model):
         if len(self.prize_range) > 3:  # Limit to 3 entries
             raise ValidationError("Only 3 entries are allowed in prize_range.")
         self.save()
+
+    def __str__(self):
+        return self.product_name
 
 
 class Cart_items(models.Model):
