@@ -952,6 +952,11 @@ class Adding_cart(APIView):
         print("Received user_id:", user_id)
         print("Received products:", products)
 
+        try:
+            user = Customer.objects.get(id=user_id)
+        except Customer.DoesNotExist:
+            return Response('no user exist in this id')
+
         # Validate data
         if user_id is None:
             return Response({"error": "Invalid data format (user_id missing or products is not a list)"}, status=status.HTTP_400_BAD_REQUEST)
@@ -1003,7 +1008,7 @@ class Adding_cart(APIView):
     
 
     def get(self, request):
-        user = request.query_params.get('userid')
+        user = request.query_params.get('user_id')
         user = int(user)
         print('Current author is:', user)
         try:
